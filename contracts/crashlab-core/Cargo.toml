@@ -1,12 +1,24 @@
 [package]
 name = "crashlab-core"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hex = "0.4"
+flate2 = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+sha2 = "0.10"
+soroban-sdk = { version = "22.0.0", optional = true }
+
+[dev-dependencies]
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+
+[features]
+default = []
+host-runner = ["soroban-sdk/testutils"]
 
 [[bin]]
 name = "export-corpus"
@@ -15,3 +27,19 @@ path = "src/bin/export-corpus.rs"
 [[bin]]
 name = "import-corpus"
 path = "src/bin/import-corpus.rs"
+
+[[bin]]
+name = "check-fixtures"
+path = "src/bin/check-fixtures.rs"
+
+[[bin]]
+name = "lint-fixtures"
+path = "src/bin/lint-fixtures.rs"
+
+[[bin]]
+name = "crash-index"
+path = "src/bin/crash-index.rs"
+
+[[bin]]
+name = "export-wasm-hash"
+path = "src/bin/export-wasm-hash.rs"

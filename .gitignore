@@ -12,3 +12,10 @@ apps/web/.next/
 .env.*
 *.log
 
+.agents/
+.claude/
+.gemini/
+issue.md
+AGENTS.md
+GEMINI.md
+skills-lock.jsonscripts/roadmap/__pycache__/

@@ -1,3 +1,5 @@
+use crate::retry::{execute_with_retry, RetryConfig, SimulationError};
+use crate::taxonomy::{stable_failure_class_for_bundle, FailureClass};
 use crate::{CaseSeed, CrashSignature};
 
 /// The three Soroban authorization modes under which a seed is exercised.
@@ -61,6 +63,14 @@ impl MatrixReport {
     pub fn is_consistent(&self) -> bool {
         self.mismatches.is_empty()
     }
+
+    /// Returns the FailureClass for a given mode's result, using
+    /// stable_failure_class_for_bundle for legacy-safe classification.
+    pub fn failure_class_for_mode(&self, mode: AuthMode) -> Option<FailureClass> {
+        self.results.iter().find(|r| r.mode == mode).map(|r| {
+            stable_failure_class_for_bundle(&self.seed, &r.signature)
+        })
+    }
 }
 
 /// Runs `seed` through `runner` once per [`AuthMode`] and collects per-mode
@@ -72,6 +82,14 @@ impl MatrixReport {
 /// matching Soroban auth setup; in tests a closure that branches on `mode` is
 /// sufficient.
 ///
+/// If the runner returns a transient error (e.g., RPC timeout), it is retried
+/// according to the default [`RetryConfig`].
+///
+/// # Errors
+///
+/// Returns [`SimulationError`] if a mode fails after all retry attempts or
+/// if a non-transient error is encountered.
+///
 /// # Example
 ///
 /// ```rust
@@ -81,30 +99,30 @@ impl MatrixReport {
 /// let seed = CaseSeed { id: 1, payload: vec![1, 2, 3] };
 ///
 /// // A runner that produces the same signature in every mode — no mismatches.
-/// let report = run_matrix(&seed, |s, _mode| classify(s));
+/// let report = run_matrix(&seed, |s, _mode| Ok(classify(s))).unwrap();
 ///
 /// assert!(report.is_consistent());
 /// assert_eq!(report.results.len(), 3);
 /// ```
-pub fn run_matrix<F>(seed: &CaseSeed, runner: F) -> MatrixReport
+pub fn run_matrix<F>(seed: &CaseSeed, mut runner: F) -> Result<MatrixReport, SimulationError>
 where
-    F: Fn(&CaseSeed, AuthMode) -> CrashSignature,
+    F: FnMut(&CaseSeed, AuthMode) -> Result<CrashSignature, SimulationError>,
 {
-    let results: Vec<ModeResult> = AuthMode::ALL
-        .iter()
-        .map(|&mode| ModeResult {
-            mode,
-            signature: runner(seed, mode),
-        })
-        .collect();
+    let config = RetryConfig::default();
+    let mut results = Vec::with_capacity(AuthMode::ALL.len());
+
+    for &mode in &AuthMode::ALL {
+        let signature = execute_with_retry(&config, None, || runner(seed, mode))?;
+        results.push(ModeResult { mode, signature });
+    }
 
     let mismatches = compute_mismatches(&results);
 
-    MatrixReport {
+    Ok(MatrixReport {
         seed: seed.clone(),
         results,
         mismatches,
-    }
+    })
 }
 
 fn compute_mismatches(results: &[ModeResult]) -> Vec<(AuthMode, AuthMode)> {
@@ -127,6 +145,36 @@ pub fn collect_mismatched(reports: &[MatrixReport]) -> Vec<&MatrixReport> {
     reports.iter().filter(|r| !r.is_consistent()).collect()
 }
 
+/// Runs a batch of seeds through the matrix and returns one MatrixReport per seed.
+pub fn run_matrix_for_seeds<F>(
+    seeds: &[CaseSeed],
+    mut runner: F,
+) -> Vec<Result<MatrixReport, SimulationError>>
+where
+    F: FnMut(&CaseSeed, AuthMode) -> Result<CrashSignature, SimulationError>,
+{
+    seeds.iter().map(|seed| run_matrix(seed, &mut runner)).collect()
+}
+
+/// A human-readable mismatch summary for a MatrixReport, including FailureClass
+/// per mode for triage.
+pub fn format_mismatch_summary(report: &MatrixReport) -> String {
+    let mut parts = Vec::new();
+    for &(mode_a, mode_b) in &report.mismatches {
+        let class_a = report
+            .failure_class_for_mode(mode_a)
+            .map_or("?".to_string(), |c| c.as_str().to_string());
+        let class_b = report
+            .failure_class_for_mode(mode_b)
+            .map_or("?".to_string(), |c| c.as_str().to_string());
+        parts.push(format!(
+            "{}[{}] \u{2260} {}[{}]",
+            mode_a, class_a, mode_b, class_b
+        ));
+    }
+    format!("seed {}: {}", report.seed.id, parts.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,7 +191,7 @@ mod tests {
         CrashSignature {
             category: "runtime-failure".to_string(),
             digest,
-            signature_hash: 0,
+            signature_hash: digest.wrapping_mul(31),
         }
     }
 
@@ -151,7 +199,7 @@ mod tests {
 
     #[test]
     fn consistent_runner_produces_no_mismatches() {
-        let report = run_matrix(&seed(1), |_, _| sig(0xABCD));
+        let report = run_matrix(&seed(1), |_, _| Ok(sig(0xABCD))).unwrap();
 
         assert_eq!(report.results.len(), 3);
         assert!(report.mismatches.is_empty());
@@ -160,7 +208,7 @@ mod tests {
 
     #[test]
     fn results_cover_all_three_modes() {
-        let report = run_matrix(&seed(2), |_, _| sig(0x1234));
+        let report = run_matrix(&seed(2), |_, _| Ok(sig(0x1234))).unwrap();
 
         let modes: Vec<AuthMode> = report.results.iter().map(|r| r.mode).collect();
         assert!(modes.contains(&AuthMode::Enforce));
@@ -173,11 +221,12 @@ mod tests {
         // Enforce↔Record and Enforce↔RecordAllowNonroot differ; Record↔RecordAllowNonroot agree.
         let report = run_matrix(&seed(3), |_, mode| {
             if mode == AuthMode::Enforce {
-                sig(0xDEAD)
+                Ok(sig(0xDEAD))
             } else {
-                sig(0xBEEF)
+                Ok(sig(0xBEEF))
             }
-        });
+        })
+        .unwrap();
 
         assert_eq!(report.mismatches.len(), 2);
         assert!(!report.is_consistent());
@@ -186,10 +235,11 @@ mod tests {
     #[test]
     fn all_modes_diverging_produces_three_mismatches() {
         let report = run_matrix(&seed(4), |_, mode| match mode {
-            AuthMode::Enforce => sig(0x01),
-            AuthMode::Record => sig(0x02),
-            AuthMode::RecordAllowNonroot => sig(0x03),
-        });
+            AuthMode::Enforce => Ok(sig(0x01)),
+            AuthMode::Record => Ok(sig(0x02)),
+            AuthMode::RecordAllowNonroot => Ok(sig(0x03)),
+        })
+        .unwrap();
 
         assert_eq!(report.mismatches.len(), 3);
         assert!(!report.is_consistent());
@@ -198,17 +248,18 @@ mod tests {
     #[test]
     fn seed_is_preserved_in_report() {
         let s = seed(99);
-        let report = run_matrix(&s, |_, _| sig(0));
+        let report = run_matrix(&s, |_, _| Ok(sig(0))).unwrap();
         assert_eq!(report.seed, s);
     }
 
     #[test]
     fn per_mode_signature_is_stored_correctly() {
         let report = run_matrix(&seed(5), |_, mode| match mode {
-            AuthMode::Enforce => sig(10),
-            AuthMode::Record => sig(20),
-            AuthMode::RecordAllowNonroot => sig(30),
-        });
+            AuthMode::Enforce => Ok(sig(10)),
+            AuthMode::Record => Ok(sig(20)),
+            AuthMode::RecordAllowNonroot => Ok(sig(30)),
+        })
+        .unwrap();
 
         for result in &report.results {
             let expected_digest = match result.mode {
@@ -225,11 +276,12 @@ mod tests {
         // Record differs; Enforce and RecordAllowNonroot agree.
         let report = run_matrix(&seed(6), |_, mode| {
             if mode == AuthMode::Record {
-                sig(0xFF)
+                Ok(sig(0xFF))
             } else {
-                sig(0x00)
+                Ok(sig(0x00))
             }
-        });
+        })
+        .unwrap();
 
         assert_eq!(report.mismatches.len(), 2);
         // Enforce and RecordAllowNonroot must NOT appear together as a mismatch.
@@ -240,18 +292,45 @@ mod tests {
         assert!(!has_enforce_vs_nonroot);
     }
 
+    #[test]
+    fn run_matrix_retries_on_transient_error() {
+        let mut calls_per_mode = std::collections::HashMap::new();
+
+        let report = run_matrix(&seed(7), |_, mode| {
+            let count = calls_per_mode.entry(mode).or_insert(0);
+            *count += 1;
+            if mode == AuthMode::Enforce && *count < 3 {
+                Err(SimulationError::Transient("rpc timeout".to_string()))
+            } else {
+                Ok(sig(0))
+            }
+        })
+        .unwrap();
+
+        assert!(report.is_consistent());
+        // Enforce should have been called 3 times (2 fails + 1 success)
+        assert_eq!(*calls_per_mode.get(&AuthMode::Enforce).unwrap(), 3);
+        // Others should have been called 1 time each
+        assert_eq!(*calls_per_mode.get(&AuthMode::Record).unwrap(), 1);
+        assert_eq!(
+            *calls_per_mode.get(&AuthMode::RecordAllowNonroot).unwrap(),
+            1
+        );
+    }
+
     // ── collect_mismatched ────────────────────────────────────────────────────
 
     #[test]
     fn collect_mismatched_excludes_consistent_reports() {
-        let consistent = run_matrix(&seed(10), |_, _| sig(0xAA));
+        let consistent = run_matrix(&seed(10), |_, _| Ok(sig(0xAA))).unwrap();
         let divergent = run_matrix(&seed(11), |_, mode| {
             if mode == AuthMode::Enforce {
-                sig(0xBB)
+                Ok(sig(0xBB))
             } else {
-                sig(0xCC)
+                Ok(sig(0xCC))
             }
-        });
+        })
+        .unwrap();
 
         let reports = vec![consistent, divergent];
         let flagged = collect_mismatched(&reports);
@@ -262,8 +341,8 @@ mod tests {
 
     #[test]
     fn collect_mismatched_returns_empty_when_all_consistent() {
-        let r1 = run_matrix(&seed(20), |_, _| sig(0x01));
-        let r2 = run_matrix(&seed(21), |_, _| sig(0x01));
+        let r1 = run_matrix(&seed(20), |_, _| Ok(sig(0x01))).unwrap();
+        let r2 = run_matrix(&seed(21), |_, _| Ok(sig(0x01))).unwrap();
         let reports = vec![r1, r2];
 
         assert!(collect_mismatched(&reports).is_empty());
@@ -273,18 +352,20 @@ mod tests {
     fn collect_mismatched_returns_all_when_all_divergent() {
         let r1 = run_matrix(&seed(30), |_, mode| {
             if mode == AuthMode::Enforce {
-                sig(1)
+                Ok(sig(1))
             } else {
-                sig(2)
+                Ok(sig(2))
             }
-        });
+        })
+        .unwrap();
         let r2 = run_matrix(&seed(31), |_, mode| {
             if mode == AuthMode::Enforce {
-                sig(3)
+                Ok(sig(3))
             } else {
-                sig(4)
+                Ok(sig(4))
             }
-        });
+        })
+        .unwrap();
         let reports = vec![r1, r2];
 
         assert_eq!(collect_mismatched(&reports).len(), 2);
@@ -301,4 +382,282 @@ mod tests {
             "record_allow_nonroot"
         );
     }
+
+    // ── run_matrix_for_seeds ──────────────────────────────────────────────────
+
+    #[test]
+    fn run_matrix_for_seeds_handles_empty_slice() {
+        let reports = run_matrix_for_seeds(&[], |_, _| Ok(sig(0)));
+        assert!(reports.is_empty());
+    }
+
+    #[test]
+    fn run_matrix_for_seeds_propagates_nontransient_error() {
+        let seeds = vec![seed(1), seed(2)];
+        let mut call_count = 0;
+        let reports = run_matrix_for_seeds(&seeds, |_, _| {
+            call_count += 1;
+            if call_count == 1 {
+                Err(SimulationError::NonTransient("fail".to_string()))
+            } else {
+                Ok(sig(0))
+            }
+        });
+
+        assert_eq!(reports.len(), 2);
+        assert!(reports[0].is_err());
+        assert!(reports[1].is_ok());
+    }
+
+    // ── boundary and malformed inputs ─────────────────────────────────────────
+
+    #[test]
+    fn empty_seed_runs_through_all_modes() {
+        let empty = CaseSeed { id: 1, payload: vec![] };
+        let report = run_matrix(&empty, |s, _| {
+            Ok(CrashSignature {
+                category: crate::taxonomy::classify_failure(s).as_str().to_string(),
+                digest: 0,
+                signature_hash: 0,
+            })
+        }).unwrap();
+        assert!(report.is_consistent());
+        assert_eq!(report.failure_class_for_mode(AuthMode::Enforce), Some(FailureClass::EmptyInput));
+    }
+
+    #[test]
+    fn oversized_seed_runs_through_all_modes() {
+        let oversized = CaseSeed { id: 2, payload: vec![0xA0; 65] };
+        let report = run_matrix(&oversized, |s, _| {
+            Ok(CrashSignature {
+                category: crate::taxonomy::classify_failure(s).as_str().to_string(),
+                digest: 0,
+                signature_hash: 0,
+            })
+        }).unwrap();
+        assert!(report.is_consistent());
+        assert_eq!(report.failure_class_for_mode(AuthMode::Record), Some(FailureClass::OversizedInput));
+    }
+
+    #[test]
+    fn invalid_enum_tag_seed_consistent_across_modes() {
+        let invalid = CaseSeed { id: 3, payload: vec![0xE0, 0xFF] };
+        let report = run_matrix(&invalid, |s, _| {
+            Ok(CrashSignature {
+                category: crate::taxonomy::classify_failure(s).as_str().to_string(),
+                digest: 0,
+                signature_hash: 0,
+            })
+        }).unwrap();
+        assert!(report.is_consistent());
+        assert_eq!(report.failure_class_for_mode(AuthMode::Enforce), Some(FailureClass::InvalidEnumTag));
+    }
+
+    #[test]
+    fn non_root_context_seed_diverges_on_enforce() {
+        let s = seed(4); // Payload: [1, 2, 3] maps to Xdr
+        let report = run_matrix(&s, |_, mode| {
+            if mode == AuthMode::Enforce {
+                Ok(CrashSignature {
+                    category: "auth".to_string(),
+                    digest: 1,
+                    signature_hash: 1,
+                })
+            } else {
+                Ok(CrashSignature {
+                    category: "xdr".to_string(),
+                    digest: 2,
+                    signature_hash: 2,
+                })
+            }
+        }).unwrap();
+        assert!(!report.is_consistent());
+        assert_eq!(report.mismatches.len(), 2);
+    }
+
+    // ── determinism and mismatch formatting ───────────────────────────────────
+
+    #[test]
+    fn determinism_test_same_seed_and_runner_yield_identical_reports() {
+        let s = seed(100);
+        let mut runner = |s: &CaseSeed, mode: AuthMode| -> Result<CrashSignature, SimulationError> {
+            let digest = s.payload.len() as u64 + (mode as u64);
+            Ok(sig(digest))
+        };
+        let report1 = run_matrix(&s, &mut runner).unwrap();
+        let report2 = run_matrix(&s, &mut runner).unwrap();
+        
+        assert_eq!(report1.mismatches, report2.mismatches);
+        for (r1, r2) in report1.results.iter().zip(report2.results.iter()) {
+            assert_eq!(r1.mode, r2.mode);
+            assert_eq!(r1.signature, r2.signature);
+        }
+    }
+
+    #[test]
+    fn mismatch_summary_formats_correctly() {
+        let s = seed(5); // Payload: [1, 2, 3] -> Xdr
+        let report = run_matrix(&s, |_, mode| {
+            match mode {
+                AuthMode::Enforce => Ok(CrashSignature {
+                    category: "auth".to_string(),
+                    digest: 1,
+                    signature_hash: 1,
+                }),
+                AuthMode::Record => Ok(CrashSignature {
+                    category: "budget".to_string(),
+                    digest: 2,
+                    signature_hash: 2,
+                }),
+                AuthMode::RecordAllowNonroot => Ok(CrashSignature {
+                    category: "xdr".to_string(),
+                    digest: 3,
+                    signature_hash: 3,
+                }),
+            }
+        }).unwrap();
+
+        let summary = format_mismatch_summary(&report);
+        assert!(summary.contains("seed 5:"));
+        assert!(summary.contains("enforce[auth] \u{2260} record[budget]"));
+        assert!(summary.contains("enforce[auth] \u{2260} record_allow_nonroot[xdr]"));
+        assert!(summary.contains("record[budget] \u{2260} record_allow_nonroot[xdr]"));
+    }
+
+    // ── cross-module integration ──────────────────────────────────────────────
+
+    #[test]
+    fn integration_fuzzer_bundle_replay() {
+        use crate::bundle_persist::{save_case_bundle_json, load_case_bundle_json};
+        use crate::replay::replay_seed_bundle;
+        use crate::CaseBundle;
+        use crate::classify;
+
+        let s = seed(6);
+        let reports = run_matrix_for_seeds(&[s.clone()], |s, _| {
+            // Use the actual classify() function to get realistic signature values
+            Ok(classify(s))
+        });
+        
+        let report = reports.into_iter().next().unwrap().unwrap();
+        assert!(report.is_consistent());
+        
+        let bundle = CaseBundle {
+            seed: report.seed.clone(),
+            signature: report.results[0].signature.clone(),
+            environment: None,
+            failure_payload: vec![],
+            rpc_envelope: None,
+        };
+
+        let bytes = save_case_bundle_json(&bundle).unwrap();
+        let loaded_bundle = load_case_bundle_json(&bytes).unwrap();
+        
+        let replay_result = replay_seed_bundle(&loaded_bundle);
+        assert!(replay_result.matches, 
+            "Replay mismatch: expected={:?}, actual={:?}", 
+            replay_result.expected, replay_result.actual);
+        assert_eq!(replay_result.expected_class, FailureClass::Xdr); // Payload [1, 2, 3] begins with 1 -> Xdr
+    }
+
+    // ── HostContractRunner integration ────────────────────────────────────────
+
+    #[test]
+    #[cfg(feature = "host-runner")]
+    fn host_runner_works_with_matrix() {
+        use crate::HostContractRunner;
+        use crate::runner::ContractRunner;
+
+        // Create a host runner with mock authorizations enabled
+        let mut host_runner = HostContractRunner::new();
+        let seed = seed(7);
+
+        // Adapt the host runner to work with the auth_matrix interface.
+        // The host runner doesn't natively support AuthMode switching, so for
+        // this test we run it once and verify the result works with the matrix.
+        let first_result = host_runner.run_seed(&seed).unwrap();
+
+        // Run the seed through the matrix using a mock runner that always
+        // returns the same signature (simulating consistent behavior across modes).
+        let report = run_matrix(&seed, |_, _| Ok(first_result.clone())).unwrap();
+
+        // Verify the matrix detected no mismatches when all modes produce the same signature
+        assert!(report.is_consistent());
+        assert_eq!(report.results.len(), 3);
+        
+        // Verify each mode got the expected result
+        for result in &report.results {
+            assert_eq!(result.signature, first_result);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "host-runner")]
+    fn host_runner_executes_multiple_seeds_with_matrix() {
+        use crate::HostContractRunner;
+        use crate::runner::ContractRunner;
+
+        let seeds = vec![seed(100), seed(101), seed(102)];
+        let mut host_runner = HostContractRunner::new();
+
+        // Execute each seed through the host runner and verify they all work with matrix
+        for test_seed in seeds {
+            let sig = host_runner.run_seed(&test_seed).unwrap();
+            
+            // Verify this signature works through the matrix
+            let report = run_matrix(&test_seed, |_, _| Ok(sig.clone())).unwrap();
+            assert!(report.is_consistent(), 
+                "Seed {} should produce consistent signature across modes", test_seed.id);
+            assert_eq!(report.seed.id, test_seed.id);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "host-runner")]
+    fn determinism_test_host_runner_produces_consistent_signatures() {
+        use crate::HostContractRunner;
+        use crate::runner::ContractRunner;
+
+        let seed = seed(200);
+        let mut runner1 = HostContractRunner::new();
+        let mut runner2 = HostContractRunner::new();
+
+        // Execute the same seed with two separate runner instances
+        let sig1 = runner1.run_seed(&seed).unwrap();
+        let sig2 = runner2.run_seed(&seed).unwrap();
+
+        // Both should produce identical signatures
+        assert_eq!(sig1.category, sig2.category);
+        assert_eq!(sig1.digest, sig2.digest);
+        assert_eq!(sig1.signature_hash, sig2.signature_hash);
+
+        // Verify they work correctly through the matrix
+        let sig1_clone = sig1.clone();
+        let report1 = run_matrix(&seed, |_, _| Ok(sig1_clone.clone())).unwrap();
+        
+        let sig2_clone = sig2.clone();
+        let report2 = run_matrix(&seed, |_, _| Ok(sig2_clone.clone())).unwrap();
+        
+        assert_eq!(report1.mismatches, report2.mismatches);
+    }
+
+    #[test]
+    #[cfg(feature = "host-runner")]
+    fn host_runner_with_mock_auths_disabled() {
+        use crate::HostContractRunner;
+        use crate::runner::ContractRunner;
+
+        // Create a runner with mock authorizations disabled
+        let mut runner_no_mock = HostContractRunner::with_mock_auths(false);
+        let seed = seed(201);
+
+        // Execute the seed and verify it produces a valid signature
+        let sig = runner_no_mock.run_seed(&seed).unwrap();
+        
+        // Verify the signature can be used with matrix without errors
+        let sig_clone = sig.clone();
+        let report = run_matrix(&seed, |_, _| Ok(sig_clone.clone())).unwrap();
+        assert!(report.is_consistent());
+    }
 }
+

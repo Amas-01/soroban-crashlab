@@ -1,4 +1,5 @@
-use crate::CaseSeed;
+use crate::is_invalid_enum_tag_payload;
+use crate::{CaseSeed, CrashSignature};
 use std::collections::HashMap;
 
 /// Stable failure categories for Soroban contract crashes.
@@ -11,6 +12,7 @@ use std::collections::HashMap;
 /// | `Budget`         | CPU or memory execution budget exceeded                     |
 /// | `State`          | Ledger entry absent, wrong type, or version conflict        |
 /// | `Xdr`            | XDR encoding / decoding error — malformed or out-of-range  |
+/// | `InvalidEnumTag` | Enum-like payload carried an unsupported discriminant tag   |
 /// | `EmptyInput`     | Seed payload was empty; no execution was attempted          |
 /// | `OversizedInput` | Seed payload exceeded the maximum allowable size            |
 /// | `Unknown`        | Raw failure did not match any known category                |
@@ -27,12 +29,16 @@ pub enum FailureClass {
     State,
     /// XDR encoding or decoding error: malformed or out-of-range value.
     Xdr,
+    /// Enum discriminant tag is outside supported variant set.
+    InvalidEnumTag,
     /// Seed payload was empty; no execution attempted.
     EmptyInput,
     /// Seed payload exceeded the maximum allowable size (> 64 bytes).
     OversizedInput,
     /// Raw failure did not match any known category.
     Unknown,
+    /// Simulation attempt exceeded the configured timeout threshold.
+    Timeout,
 }
 
 impl FailureClass {
@@ -46,22 +52,41 @@ impl FailureClass {
             FailureClass::Budget => "budget",
             FailureClass::State => "state",
             FailureClass::Xdr => "xdr",
+            FailureClass::InvalidEnumTag => "invalid-enum-tag",
             FailureClass::EmptyInput => "empty-input",
             FailureClass::OversizedInput => "oversized-input",
             FailureClass::Unknown => "unknown",
+            FailureClass::Timeout => "timeout",
         }
     }
 
     /// All variants in declaration order, useful for iteration and reporting.
-    pub const ALL: [FailureClass; 7] = [
+    pub const ALL: [FailureClass; 9] = [
         FailureClass::Auth,
         FailureClass::Budget,
         FailureClass::State,
         FailureClass::Xdr,
+        FailureClass::InvalidEnumTag,
         FailureClass::EmptyInput,
         FailureClass::OversizedInput,
         FailureClass::Unknown,
+        FailureClass::Timeout,
     ];
+
+    /// Parses a persisted category label into a stable failure class.
+    pub fn from_category_label(label: &str) -> Option<Self> {
+        match label {
+            "auth" => Some(FailureClass::Auth),
+            "budget" => Some(FailureClass::Budget),
+            "state" => Some(FailureClass::State),
+            "xdr" => Some(FailureClass::Xdr),
+            "invalid-enum-tag" => Some(FailureClass::InvalidEnumTag),
+            "empty-input" => Some(FailureClass::EmptyInput),
+            "oversized-input" => Some(FailureClass::OversizedInput),
+            "unknown" => Some(FailureClass::Unknown),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for FailureClass {
@@ -106,6 +131,9 @@ pub fn classify_failure(seed: &CaseSeed) -> FailureClass {
     if seed.payload.len() > 64 {
         return FailureClass::OversizedInput;
     }
+    if is_invalid_enum_tag_payload(&seed.payload) {
+        return FailureClass::InvalidEnumTag;
+    }
     match seed.payload[0] {
         0x00..=0x1F => FailureClass::Xdr,
         0x20..=0x5F => FailureClass::State,
@@ -143,6 +171,50 @@ pub fn group_by_class(seeds: &[CaseSeed]) -> HashMap<FailureClass, Vec<&CaseSeed
         map.entry(classify_failure(seed)).or_default().push(seed);
     }
     map
+}
+
+/// Resolves a stable class for a persisted bundle signature.
+///
+/// Bundles written before the taxonomy rollout may still carry the legacy
+/// `"runtime-failure"` signature category. In that case we derive the stable
+/// class from the seed payload so replay remains reproducible across reruns.
+pub fn stable_failure_class_for_bundle(
+    seed: &CaseSeed,
+    signature: &CrashSignature,
+) -> FailureClass {
+    FailureClass::from_category_label(&signature.category).unwrap_or_else(|| {
+        if signature.category == "runtime-failure" {
+            classify_failure(seed)
+        } else {
+            FailureClass::Unknown
+        }
+    })
+}
+
+/// Build a `CrashSignature` from a seed using only the taxonomy mapping.
+///
+/// This central helper produces the stable `category` label, computes the
+/// deterministic `digest` and derives a `signature_hash` using the
+/// `signature_hash` helper. It is intended to be the single place that
+/// constructs `CrashSignature` values from raw seed bytes so callers (e.g.
+/// `to_bundle`) remain consistent with the taxonomy.
+pub fn crash_signature_from_seed(seed: &CaseSeed) -> CrashSignature {
+    let class = classify_failure(seed);
+    let category = class.as_str().to_string();
+
+    // Preserve the existing digest algorithm used by callers.
+    let digest = seed.payload.iter().fold(seed.id, |acc, b| {
+        acc.wrapping_mul(1099511628211).wrapping_add(*b as u64)
+    });
+
+    // Use the signature hashing helper so hashing logic is centralized.
+    let signature_hash = crate::signature_hash::hash_category_payload(category.as_str(), &seed.payload);
+
+    CrashSignature {
+        category,
+        digest,
+        signature_hash,
+    }
 }
 
 #[cfg(test)]
@@ -234,6 +306,7 @@ mod tests {
         assert_eq!(FailureClass::Budget.as_str(), "budget");
         assert_eq!(FailureClass::State.as_str(), "state");
         assert_eq!(FailureClass::Xdr.as_str(), "xdr");
+        assert_eq!(FailureClass::InvalidEnumTag.as_str(), "invalid-enum-tag");
         assert_eq!(FailureClass::EmptyInput.as_str(), "empty-input");
         assert_eq!(FailureClass::OversizedInput.as_str(), "oversized-input");
         assert_eq!(FailureClass::Unknown.as_str(), "unknown");
@@ -247,8 +320,59 @@ mod tests {
     }
 
     #[test]
-    fn all_contains_seven_variants() {
-        assert_eq!(FailureClass::ALL.len(), 7);
+    fn all_contains_nine_variants() {
+        assert_eq!(FailureClass::ALL.len(), 9);
+        assert!(FailureClass::ALL.contains(&FailureClass::Unknown));
+    }
+
+    #[test]
+    fn parses_stable_category_labels() {
+        assert_eq!(
+            FailureClass::from_category_label("budget"),
+            Some(FailureClass::Budget)
+        );
+        assert_eq!(FailureClass::from_category_label("runtime-failure"), None);
+    }
+
+    #[test]
+    fn invalid_enum_tag_is_classified_distinctly() {
+        let seed = CaseSeed {
+            id: 0,
+            payload: vec![0xE0, 0xFF],
+        };
+        assert_eq!(classify_failure(&seed), FailureClass::InvalidEnumTag);
+    }
+
+    #[test]
+    fn stable_class_uses_legacy_runtime_failure_seed_mapping() {
+        let runtime = CrashSignature {
+            category: "runtime-failure".into(),
+            digest: 1,
+            signature_hash: 2,
+        };
+
+        assert_eq!(
+            stable_failure_class_for_bundle(&seed(vec![0xA0, 0x01]), &runtime),
+            FailureClass::Auth
+        );
+        assert_eq!(
+            stable_failure_class_for_bundle(&seed(vec![0x10]), &runtime),
+            FailureClass::Xdr
+        );
+    }
+
+    #[test]
+    fn stable_class_prefers_explicit_signature_category_when_present() {
+        let signature = CrashSignature {
+            category: "state".into(),
+            digest: 1,
+            signature_hash: 2,
+        };
+
+        assert_eq!(
+            stable_failure_class_for_bundle(&seed(vec![0xA0, 0x01]), &signature),
+            FailureClass::State
+        );
     }
 
     // ── group_by_class ───────────────────────────────────────────────────────
