@@ -19,4 +19,4 @@ export async function resolveGithubIssueLink(owner: string, repo: string, issueN
   };
 }
 
-export default { resolveGithubIssueLink };
+

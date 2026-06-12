@@ -14,4 +14,4 @@ export async function resolveLinearIssueLink(team: string, issueId: string): Pro
   return { url: `https://linear.app/${team}/issue/${issueId}`, id: issueId };
 }
 
-export default { resolveLinearIssueLink };
+

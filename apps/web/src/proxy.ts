@@ -31,7 +31,7 @@ export const config = {
   matcher: '/api/:path*',
 };
 
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   if (request.method === 'OPTIONS') {
     return NextResponse.next();
   }

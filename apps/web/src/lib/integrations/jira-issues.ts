@@ -15,4 +15,4 @@ export async function resolveJiraIssueLink(baseUrl: string, issueKey: string): P
   return { url: `${base}/browse/${issueKey}`, key: issueKey };
 }
 
-export default { resolveJiraIssueLink };
+

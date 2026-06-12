@@ -163,4 +163,4 @@ export function createSentryAdapter(options: SentryAdapterOptions = {}) {
   };
 }
 
-export default { createSentryAdapter };
+
