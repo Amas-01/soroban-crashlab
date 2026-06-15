@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildMockRuns } from '@/app/mockRuns';
 import type { RunIssueLink } from '@/app/types';
+import { tryBackend } from '@/lib/api-proxy';
+
+const ISSUES_API_URL = process.env.ISSUES_API_URL || process.env.NEXT_PUBLIC_API_URL;
 
 // In-memory store keyed by run ID (persists for the lifetime of the process)
 const issueStore = new Map<string, RunIssueLink[]>();
@@ -24,11 +27,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const run = buildMockRuns().find((r) => r.id === id);
-  if (!run) {
-    return NextResponse.json({ error: 'Run not found' }, { status: 404 });
-  }
-  return NextResponse.json({ runId: id, issues: getIssues(id) });
+  return tryBackend(ISSUES_API_URL, `/runs/${id}/issues`, {}, async () => {
+    const run = buildMockRuns().find((r) => r.id === id);
+    if (!run) {
+      return NextResponse.json({ error: 'Run not found' }, { status: 404 });
+    }
+    return NextResponse.json({ runId: id, issues: getIssues(id) });
+  });
 }
 
 /**

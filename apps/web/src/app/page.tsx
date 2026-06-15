@@ -97,7 +97,7 @@ function DashboardContent() {
               <Link href="/runs" className="link text-xs sm:text-sm">View all</Link>
             </div>
             <div className="card table-responsive">
-              <table className="data-table min-w-[500px] sm:min-w-full">
+              <table className="data-table">
                 <thead>
                   <tr>
                     <th>ID</th>

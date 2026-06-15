@@ -128,8 +128,8 @@ const INTEGRATIONS: Integration[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
     ),
-    href: '#webhooks',
-    status: 'coming-soon',
+    href: '/integrations/webhooks',
+    status: 'available',
     category: 'Notifications'
   },
   {
@@ -141,8 +141,8 @@ const INTEGRATIONS: Integration[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
       </svg>
     ),
-    href: '#prometheus',
-    status: 'coming-soon',
+    href: '/integrations/prometheus',
+    status: 'available',
     category: 'Monitoring'
   },
   {
@@ -154,8 +154,8 @@ const INTEGRATIONS: Integration[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
       </svg>
     ),
-    href: '#auth',
-    status: 'coming-soon',
+    href: '/integrations/auth',
+    status: 'available',
     category: 'Security'
   }
 ];

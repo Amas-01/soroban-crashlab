@@ -30,12 +30,6 @@ async function fetchRuns(): Promise<FuzzingRun[]> {
   return data.runs as FuzzingRun[];
 }
 
-/**
- * Fetches associated issues for each run from the real issues API.
- * Fires requests in parallel and returns a Map keyed by run ID.
- * Runs whose issue fetch fails are silently skipped (they keep their
- * existing `associatedIssues` value from the runs payload).
- */
 async function fetchIssuesForRuns(
   runs: FuzzingRun[],
 ): Promise<Map<string, RunIssueLink[]>> {
@@ -50,16 +44,11 @@ async function fetchIssuesForRuns(
     }),
   );
 
-  // Silently ignore rejected promises – runs without issue data
-  // will retain their existing associatedIssues from the runs API.
   void results;
 
   return issueMap;
 }
 
-/**
- * Combined loader: fetches runs then enriches them with live issue data.
- */
 async function loadTriageData(): Promise<FuzzingRun[]> {
   const runs = await fetchRuns();
   const issueMap = await fetchIssuesForRuns(runs);
@@ -112,14 +101,12 @@ function LoadingSkeleton() {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 space-y-3 min-h-[320px]"
+          className="rounded-2xl border p-5 space-y-3 min-h-[320px]"
+          style={{ borderColor: 'var(--border-color)' }}
         >
-          <div className="h-5 w-24 rounded bg-zinc-200 dark:bg-zinc-800" />
+          <div className="skeleton h-5 w-24" />
           {Array.from({ length: 4 }).map((_, j) => (
-            <div
-              key={j}
-              className="h-16 rounded-xl bg-zinc-100 dark:bg-zinc-900"
-            />
+            <div key={j} className="skeleton h-16 w-full" />
           ))}
         </div>
       ))}
@@ -134,27 +121,11 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
       role="alert"
       className="flex flex-col items-center gap-4 py-20 text-center"
     >
-      <svg
-        className="w-10 h-10 text-rose-400"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-        aria-hidden
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-        />
-      </svg>
-      <p className="text-zinc-600 dark:text-zinc-400">
-        Failed to load triage data. Check your connection and try again.
-      </p>
+      <p className="text-meta">Failed to load triage data. Check your connection and try again.</p>
       <button
         type="button"
         onClick={onRetry}
-        className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors"
+        className="btn-primary text-xs sm:text-sm"
       >
         Retry
       </button>
@@ -168,7 +139,11 @@ function IssueBadge({ issue }: { issue: RunIssueLink }) {
       href={issue.href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors truncate max-w-[120px] sm:max-w-[180px]"
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold truncate max-w-[120px] sm:max-w-[180px]"
+      style={{
+        background: 'var(--highlight-bg)',
+        color: '#0A66C2',
+      }}
       title={issue.label}
     >
       <svg
@@ -200,11 +175,15 @@ function RunCard({ run }: { run: FuzzingRun }) {
   const issues = run.associatedIssues ?? [];
   return (
     <article
-      className="bg-white dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md focus-within:ring-2 focus-within:ring-indigo-500 transition-all"
+      className="p-4 rounded-xl border shadow-sm hover:shadow-md focus-within:ring-2 focus-within:ring-[#0A66C2] transition-all"
+      style={{
+        background: 'var(--surface)',
+        borderColor: 'var(--border-color)',
+      }}
       aria-label={`Run ${run.id}, area ${run.area}, severity ${run.severity}`}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
+        <span className="font-mono text-xs font-bold" style={{ color: '#0A66C2' }}>
           {run.id}
         </span>
         <span
@@ -212,10 +191,10 @@ function RunCard({ run }: { run: FuzzingRun }) {
           aria-label={`Severity: ${run.severity}`}
         />
       </div>
-      <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-2 capitalize">
+      <div className="text-sm font-semibold mb-2 capitalize">
         {run.area}
       </div>
-      <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+      <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--text-secondary)' }}>
         <span className="uppercase tracking-wide font-semibold">
           {run.severity}
         </span>
@@ -256,7 +235,7 @@ function TriageColumn({
       <div className="flex items-center justify-between mb-5">
         <h2
           id={`col-${col.id}`}
-          className="font-bold text-lg text-zinc-900 dark:text-zinc-50"
+          className="font-bold text-lg"
         >
           {col.title}
         </h2>
@@ -269,7 +248,13 @@ function TriageColumn({
 
       <div className="flex-1 space-y-3 overflow-y-auto">
         {runs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400 text-xs font-medium">
+          <div
+            className="flex flex-col items-center justify-center h-40 border-2 border-dashed rounded-xl text-xs font-medium"
+            style={{
+              borderColor: 'var(--border-color)',
+              color: 'var(--text-secondary)',
+            }}
+          >
             No items
           </div>
         ) : (
@@ -318,20 +303,26 @@ export default function TriageBoardPage() {
   const totalIssues = getIssueCounts(runs);
 
   return (
-    <div className="max-w-6xl mx-auto w-full px-4 py-10">
+    <div className="container-full page-padding fade-in">
       {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Issue Triage Board
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Manage failures and active campaigns in a kanban-style view.
-          {dataState === "success" && totalIssues > 0 && (
-            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 text-xs font-semibold">
-              {totalIssues} linked {totalIssues === 1 ? "issue" : "issues"}
-            </span>
-          )}
-        </p>
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <div>
+          <h1 className="heading-page">Issue Triage Board</h1>
+          <p className="text-meta mt-0.5 sm:mt-1">
+            Manage failures and active campaigns in a kanban-style view.
+            {dataState === "success" && totalIssues > 0 && (
+              <span
+                className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
+                style={{
+                  background: 'var(--highlight-bg)',
+                  color: '#0A66C2',
+                }}
+              >
+                {totalIssues} linked {totalIssues === 1 ? "issue" : "issues"}
+              </span>
+            )}
+          </p>
+        </div>
       </div>
 
       {dataState === "loading" && <LoadingSkeleton />}

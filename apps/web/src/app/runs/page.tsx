@@ -79,7 +79,7 @@ export default function RunsPage() {
 
       {dataState === 'success' && (
         <div className="card table-responsive">
-          <table className="data-table min-w-[600px] sm:min-w-full">
+          <table className="data-table">
             <thead>
               <tr>
                 <th>ID</th>
