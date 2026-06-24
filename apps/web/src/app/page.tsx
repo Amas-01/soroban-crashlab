@@ -30,6 +30,131 @@ function DashboardContent() {
       cancelled = true;
       ctrl.abort();
     };
+  }, [fetchAttempt, demoLoading]);
+
+  // Re-fetch data when the page becomes visible again (e.g., after navigating back).
+  useEffect(() => {
+    let mounted = true;
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && mounted) {
+        setFetchAttempt(prev => prev + 1);
+      }
+    };
+    const handleFocus = () => {
+      if (mounted) setFetchAttempt(prev => prev + 1);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      mounted = false;
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedRunId && !selectedRun) {
+      setQueryState({ run: null });
+    }
+  }, [selectedRun, selectedRunId, setQueryState]);
+
+  useEffect(() => {
+    if (currentPage !== clampedPage) {
+      setQueryState({ page: clampedPage === 1 ? null : String(clampedPage) });
+    }
+  }, [clampedPage, currentPage, setQueryState]);
+
+  useEffect(() => {
+    if (reportRunId && !reportRun) {
+      const run = runs.find(r => r.id === reportRunId);
+      if (run) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setReportRun(run);
+      } else if (dataState === "success") {
+        // Clear param if run not found after data loaded
+        setQueryState({ report: null });
+      }
+    }
+  }, [reportRun, reportRunId, runs, dataState, setQueryState]);
+
+  const handleOpenRunDrawer = useCallback(
+    (runId: string) => setQueryState({ run: runId, report: null }),
+    [setQueryState],
+  );
+
+  const handleCloseRunDrawer = useCallback(
+    () => setQueryState({ run: null }),
+    [setQueryState],
+  );
+
+  const handleOpenReport = useCallback(
+    (run: FuzzingRun) => {
+      setReportRun(run);
+      setQueryState({ report: run.id, run: null });
+    },
+    [setQueryState],
+  );
+
+  const handleCloseReport = useCallback(
+    () => {
+      setReportRun(null);
+      setQueryState({ report: null });
+    },
+    [setQueryState],
+  );
+
+  const handleReplayComplete = useCallback(
+    (data: FuzzingRun | { id: string; status: "running" }) => {
+      let newRun: FuzzingRun;
+      if ("area" in data) {
+        newRun = data;
+      } else {
+        newRun = {
+          id: data.id,
+          status: "running",
+          area: "state",
+          severity: "medium",
+          duration: 0,
+          seedCount: 0,
+          crashDetail: null,
+          cpuInstructions: 0,
+          memoryBytes: 0,
+          minResourceFee: 0,
+        };
+      }
+      setRuns((prev) => [newRun, ...prev]);
+    },
+    [],
+  );
+
+  const handlePageChange = useCallback(
+    (page: number) => {
+      setQueryState({ page: page <= 1 ? null : String(page) });
+      cardsContainerRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    },
+    [setQueryState],
+  );
+
+  const handleLaunchCampaign = useCallback((config: CampaignConfig) => {
+    console.log("Launching campaign with config:", config);
+    setShowCampaignConfig(false);
+    // Simulate campaign launch by adding a new running run
+    const newRun: FuzzingRun = {
+      id: `run-${Date.now().toString().slice(-4)}`,
+      status: "running",
+      area: "state",
+      severity: "medium",
+      duration: 0,
+      seedCount: 0,
+      crashDetail: null,
+      cpuInstructions: 0,
+      memoryBytes: 0,
+      minResourceFee: 0,
+    };
+    setRuns((prev) => [newRun, ...prev]);
   }, []);
 
   const totalRuns = runs.length;
