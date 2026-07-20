@@ -75,7 +75,6 @@ function DashboardContent() {
     return () => window.removeEventListener("dashboard-layout-updated", loadLayout);
   }, []);
 
-  const recentRuns = runs.slice(0, 8);
   const setActiveTag = useCallback(
     (tag: string) => {
       const next = new URLSearchParams(searchParams.toString());

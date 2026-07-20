@@ -24,7 +24,7 @@ export const sentryAdapter = {
     const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
     if (dsn) {
-      Sentry.captureException(error, { contexts });
+      Sentry.captureException(error, { contexts: contexts as Sentry.Contexts });
     } else {
       console.error('[Sentry Mock] captureException:', error, contexts || '');
     }

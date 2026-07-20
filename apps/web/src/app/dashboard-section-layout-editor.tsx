@@ -21,17 +21,14 @@ const SECTION_LABELS: Record<DashboardSectionId, string> = {
 };
 
 export default function DashboardSectionLayoutEditor() {
-  const [sections, setSections] = useState<DashboardSectionConfig[]>(DEFAULT_DASHBOARD_LAYOUT);
-  const [savedMessage, setSavedMessage] = useState<string | null>(null);
-
-  useEffect(() => {
+  const [sections, setSections] = useState<DashboardSectionConfig[]>(() => {
     try {
-      const raw = localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY);
-      setSections(parseDashboardLayout(raw));
+      return parseDashboardLayout(localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY));
     } catch {
-      setSections(DEFAULT_DASHBOARD_LAYOUT);
+      return DEFAULT_DASHBOARD_LAYOUT;
     }
-  }, []);
+  });
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   const persist = (next: DashboardSectionConfig[]) => {
     const sorted = sortDashboardSections(next);
