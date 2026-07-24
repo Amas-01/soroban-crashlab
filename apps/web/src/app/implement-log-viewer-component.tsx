@@ -24,6 +24,7 @@ import {
   type LogLevelFilter,
 } from './log-viewer-utils';
 import { SEED_LOG_ENTRIES } from '../fixtures/logs';
+import LogSeverityBadge from '../components/LogSeverityBadge';
 
 const LEVEL_OPTIONS: { value: LogLevelFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -32,13 +33,6 @@ const LEVEL_OPTIONS: { value: LogLevelFilter; label: string }[] = [
   { value: 'error', label: 'Error' },
   { value: 'debug', label: 'Debug' },
 ];
-
-const LEVEL_BADGE_CLASS: Record<LogLevel, string> = {
-  info: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800',
-  warn: 'bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800',
-  error: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800',
-  debug: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
-};
 
 let streamSeq = 0;
 
@@ -252,11 +246,7 @@ export default function LogViewer() {
             {filtered.map((e) => (
               <li key={e.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-zinc-800/80 pb-1 last:border-0">
                 <span className="text-zinc-500 shrink-0 tabular-nums">{formatTime(e.timestamp)}</span>
-                <span
-                  className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${LEVEL_BADGE_CLASS[e.level]}`}
-                >
-                  {e.level}
-                </span>
+                <LogSeverityBadge level={e.level} />
                 <span className="text-cyan-400/90 shrink-0">[{e.source}]</span>
                 <span className="text-zinc-200 break-all">{e.message}</span>
               </li>
