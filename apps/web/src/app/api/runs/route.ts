@@ -14,6 +14,7 @@ export const GET = withRouteErrorHandling('GET /api/runs', async (request: Reque
       const qs = sanitizedSearchParams.toString();
       const res = await fetch(`${apiUrl}/api/runs${qs ? `?${qs}` : ''}`, {
         cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
       });
       if (res.ok) {
         const data = await res.json();
