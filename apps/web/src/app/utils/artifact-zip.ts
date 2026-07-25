@@ -1,74 +1,42 @@
-/**
- * Utility for generating downloadable zip archives of run artifacts.
- */
-
 import type { FuzzingRun, LedgerStateChange } from '../types';
 import { collectRunArtifacts } from './artifact-collection';
 
-// Import JSZip - use require for CommonJS compatibility
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const JSZip = require('jszip');
+function makeTextFile(name: string, content: string): string {
+  return `--boundary\r\nContent-Type: application/json\r\nContent-Disposition: attachment; name="${name}"\r\n\r\n${content}\r\n`;
+}
 
-/**
- * Generates a zip archive containing structured run artifacts.
- * 
- * The zip includes:
- * - metadata.json: Run metadata and resource metrics
- * - traces.json: Crash traces and failure details
- * - fixtures.json: Ledger state changes
- * - manifest.json: Index of all included files
- * 
- * @param run - The fuzzing run to archive
- * @param ledgerChanges - Optional ledger state changes
- * @returns Promise resolving to a Blob suitable for browser download
- */
+function makeManifest(runId: string, files: { name: string; size: number }[]): string {
+  return JSON.stringify({
+    version: '1.0',
+    generatedAt: new Date().toISOString(),
+    runId,
+    files,
+  }, null, 2);
+}
+
 export async function generateRunArtifactZip(
   run: FuzzingRun,
   ledgerChanges?: LedgerStateChange[]
 ): Promise<Blob> {
   const artifacts = collectRunArtifacts(run, ledgerChanges);
-  
-  const zip = new JSZip();
-  
-  // Add structured artifact files
-  zip.file('metadata.json', JSON.stringify(artifacts.metadata, null, 2));
-  zip.file('traces.json', JSON.stringify(artifacts.traces, null, 2));
-  zip.file('fixtures.json', JSON.stringify(artifacts.fixtures, null, 2));
-  
-  // Create manifest listing all included files
-  const manifest = {
-    version: '1.0',
-    generatedAt: new Date().toISOString(),
-    runId: run.id,
-    files: [
-      {
-        name: 'metadata.json',
-        description: 'Run metadata including status, area, severity, and resource metrics',
-        size: JSON.stringify(artifacts.metadata).length,
-      },
-      {
-        name: 'traces.json',
-        description: 'Crash traces and failure details',
-        size: JSON.stringify(artifacts.traces).length,
-      },
-      {
-        name: 'fixtures.json',
-        description: 'Ledger state changes and contract data fixtures',
-        size: JSON.stringify(artifacts.fixtures).length,
-      },
-    ],
-  };
-  
-  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
-  
-  // Generate zip blob
-  const blob = await zip.generateAsync({
-    type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: {
-      level: 6, // Balanced compression
-    },
-  });
-  
-  return blob;
+
+  const metadataJson = JSON.stringify(artifacts.metadata, null, 2);
+  const tracesJson = JSON.stringify(artifacts.traces, null, 2);
+  const fixturesJson = JSON.stringify(artifacts.fixtures, null, 2);
+
+  const manifest = makeManifest(run.id, [
+    { name: 'metadata.json', size: metadataJson.length },
+    { name: 'traces.json', size: tracesJson.length },
+    { name: 'fixtures.json', size: fixturesJson.length },
+  ]);
+
+  const parts = [
+    makeTextFile('metadata.json', metadataJson),
+    makeTextFile('traces.json', tracesJson),
+    makeTextFile('fixtures.json', fixturesJson),
+    makeTextFile('manifest.json', manifest),
+    '--boundary--',
+  ];
+
+  return new Blob(parts, { type: 'application/octet-stream' });
 }

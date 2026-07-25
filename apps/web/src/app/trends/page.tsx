@@ -22,7 +22,7 @@ import {
  */
 export default function CrashTrendPage() {
   const [runs, setRuns] = useState<FuzzingRun[]>([]);
-  const [dataState, setDataState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [_dataState, setDataState] = useState<'loading' | 'success' | 'error'>('loading');
 
   useEffect(() => {
     let cancelled = false;
@@ -32,8 +32,6 @@ export default function CrashTrendPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const isLoading = dataState === 'loading';
-  const hasError = dataState === 'error';
 
   // Filter state
   const [selectedAreas, setSelectedAreas] = useState<RunArea[]>([]);
@@ -161,7 +159,7 @@ export default function CrashTrendPage() {
                 />
 
                 {/* Summary stats */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                   <StatCard
                     label="Total Days"
                     value={chartData.length.toString()}

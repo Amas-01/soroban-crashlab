@@ -12,7 +12,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   filterLogEntries,
   type LogEntry,
-  type LogLevel,
   type LogLevelFilter,
 } from '../log-viewer-utils';
 import {
@@ -23,6 +22,7 @@ import {
 import { useDebounce } from '../../lib/useDebounce';
 import { MOCK_LOG_ENTRIES } from '../../fixtures/logs';
 import { useDataTableKeyboardNav } from '../use-data-table-keyboard-nav';
+import LogSeverityBadge from '../../components/LogSeverityBadge';
 
 async function fetchLogs(): Promise<LogEntry[]> {
   await new Promise((r) => setTimeout(r, 800));
@@ -39,13 +39,6 @@ const LEVEL_OPTIONS: { value: LogLevelFilter; label: string }[] = [
   { value: 'error', label: 'Error' },
   { value: 'debug', label: 'Debug' },
 ];
-
-const LEVEL_BADGE: Record<LogLevel, string> = {
-  info:  'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800',
-  warn:  'bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800',
-  error: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800',
-  debug: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
-};
 
 function formatTimestamp(ts: number): string {
   return new Date(ts).toISOString().replace('T', ' ').slice(0, 23) + 'Z';
@@ -92,8 +85,8 @@ function EmptyState() {
 // Main page
 // ---------------------------------------------------------------------------
 export default function LogViewerPage() {
-  const [dataState, setDataState] = useState<PageDataState>('loading');
-  const [entries, setEntries] = useState<LogEntry[]>([]);
+  const [dataState, setDataState] = useState<PageDataState>('success');
+  const [entries, setEntries] = useState<LogEntry[]>(MOCK_LOG_ENTRIES);
   const [levelFilter, setLevelFilter] = useState<LogLevelFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -245,9 +238,7 @@ export default function LogViewerPage() {
                         </a>
                       </td>
                       <td>
-                        <span className={`text-[9px] sm:text-[10px] uppercase font-bold px-1 sm:px-1.5 py-0.5 rounded border ${LEVEL_BADGE[entry.level]}`}>
-                          {entry.level}
-                        </span>
+                        <LogSeverityBadge level={entry.level} />
                       </td>
                       <td className="hidden sm:table-cell" style={{ color: '#0A66C2' }}>
                         {entry.source}

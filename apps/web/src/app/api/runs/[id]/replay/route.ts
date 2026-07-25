@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -257,6 +257,7 @@ async function resolveReplayRun(runId: string): Promise<FuzzingRun | null> {
     const upstream = await fetch(`${runsApiUrl}/runs/${encodeURIComponent(runId)}`, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (upstream.status === 404) {

@@ -1,4 +1,4 @@
-import type { AlertRule, NotificationChannel } from '../app/create-alerting-settings-page-page';
+import type { AlertRule, NotificationChannel } from '../app/alerting-settings-page-utils';
 
 export const MOCK_ALERT_RULES: AlertRule[] = [
   {
@@ -14,8 +14,8 @@ export const MOCK_ALERT_RULES: AlertRule[] = [
     channels: ['email', 'slack'],
     cooldown: 30,
     tags: ['critical', 'fuzzing'],
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-    lastTriggered: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    lastTriggered: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
   },
   {
     id: 'resource-exhaustion',
@@ -30,7 +30,7 @@ export const MOCK_ALERT_RULES: AlertRule[] = [
     channels: ['email'],
     cooldown: 60,
     tags: ['performance', 'resource'],
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
     id: 'consecutive-failures',
@@ -45,8 +45,8 @@ export const MOCK_ALERT_RULES: AlertRule[] = [
     channels: ['email', 'slack', 'sms'],
     cooldown: 15,
     tags: ['critical', 'reliability'],
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-    lastTriggered: new Date(Date.now() - 6 * 60 * 60 * 1000),
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    lastTriggered: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
   },
   {
     id: 'memory-anomaly',
@@ -61,7 +61,7 @@ export const MOCK_ALERT_RULES: AlertRule[] = [
     channels: ['webhook'],
     cooldown: 120,
     tags: ['performance', 'anomaly'],
-    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
     id: 'security-violation',
@@ -76,7 +76,7 @@ export const MOCK_ALERT_RULES: AlertRule[] = [
     channels: ['email', 'slack', 'sms'],
     cooldown: 5,
     tags: ['security', 'critical'],
-    createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
+    createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
   },
 ];
 

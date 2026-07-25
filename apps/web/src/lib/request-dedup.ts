@@ -9,12 +9,16 @@
  */
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 export function dedupedFetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const existing = inFlightRequests.get(url);
   if (existing) return existing as Promise<T>;
 
-  const request = fetch(url, { signal })
+  const timeoutSignal = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+  const request = fetch(url, { signal: combinedSignal })
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json() as Promise<T>;
