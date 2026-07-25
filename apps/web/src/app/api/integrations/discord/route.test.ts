@@ -2,7 +2,7 @@
  * Tests for Discord webhook API route
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { POST } from './route';
 
 describe('POST /api/integrations/discord', () => {

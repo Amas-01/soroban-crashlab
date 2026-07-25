@@ -105,16 +105,17 @@ describe('sendDiscordNotification', () => {
   });
 
   it('uses default username when not provided', async () => {
-    global.fetch = vi.fn(() =>
+    const mockFetch = vi.fn(() =>
       Promise.resolve({ ok: true, status: 204 } as Response),
     );
+    global.fetch = mockFetch;
 
     await sendDiscordNotification(
       { webhookUrl: 'https://discord.com/api/webhooks/123/abc' },
       { content: 'Test' },
     );
 
-    const callBody = JSON.parse((fetch as any).mock.calls[0][1].body);
+    const callBody = JSON.parse(mockFetch.mock.calls[0][1]!.body as string);
     expect(callBody.username).toBe('CrashLab');
   });
 });

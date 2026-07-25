@@ -2,7 +2,7 @@
  * Tests for Linear issues integration
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { resolveLinearIssueLink, fetchLinearIssue } from './linear-issues';
 import { logger } from '../logger';
 

@@ -2,7 +2,7 @@
  * Tests for Datadog metrics API route
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { GET } from './route';
 
 describe('GET /api/integrations/datadog/metrics', () => {

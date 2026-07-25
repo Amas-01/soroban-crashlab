@@ -2,7 +2,7 @@
  * Tests for Jira issues integration
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { resolveJiraIssueLink, fetchJiraIssue } from './jira-issues';
 import { logger } from '../logger';
 
