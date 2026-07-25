@@ -23,6 +23,46 @@ const SENSITIVE_KEYS: &[&[u8]] = &[
     b"set-cookie",
 ];
 
+const INLINE_CREDENTIAL_PREFIXES: &[&[u8]] = &[
+    b"sk_live_",
+    b"sk_test_",
+    b"rk_live_",
+    b"rk_test_",
+    b"pk_live_",
+    b"pk_test_",
+];
+
+fn is_credential_token_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'
+}
+
+fn redact_inline_credential_tokens(bytes: &mut [u8]) {
+    let mut index = 0;
+    while index < bytes.len() {
+        let Some(prefix) = INLINE_CREDENTIAL_PREFIXES
+            .iter()
+            .copied()
+            .find(|prefix| {
+                let end = index + prefix.len();
+                end <= bytes.len() && bytes[index..end].eq_ignore_ascii_case(prefix)
+            })
+        else {
+            index += 1;
+            continue;
+        };
+
+        let mut end = index + prefix.len();
+        while end < bytes.len() && is_credential_token_char(bytes[end]) {
+            end += 1;
+        }
+
+        for slot in &mut bytes[index..end] {
+            *slot = b'x';
+        }
+        index = end;
+    }
+}
+
 // ── low-level byte helpers (unchanged public behaviour) ─────────────────────
 
 fn is_value_delimiter(byte: u8) -> bool {
@@ -88,6 +128,25 @@ pub fn sanitize_payload_fragments(payload: &[u8]) -> Vec<u8> {
     let mut index = 0;
 
     while index < payload.len() {
+        // Special case for sk_live_ and sk_test_ to redact prefix as well
+        if index + 8 <= payload.len() {
+            let prefix = &payload[index..index + 8];
+            if prefix == b"sk_live_" || prefix == b"sk_test_" {
+                // Redact the prefix
+                for i in index..index + 8 {
+                    sanitized[i] = b'x';
+                }
+                // Redact following alphanumeric characters
+                let mut val_index = index + 8;
+                while val_index < payload.len() && payload[val_index].is_ascii_alphanumeric() {
+                    sanitized[val_index] = b'x';
+                    val_index += 1;
+                }
+                index = val_index;
+                continue;
+            }
+        }
+
         let Some(key) = key_match(payload, index) else {
             index += 1;
             continue;
@@ -109,6 +168,7 @@ pub fn sanitize_payload_fragments(payload: &[u8]) -> Vec<u8> {
         index = value_index;
     }
 
+    redact_inline_credential_tokens(&mut sanitized);
     sanitized
 }
 
@@ -273,6 +333,23 @@ pub fn sanitize_payload_with_context(payload: &[u8], context: &SanitizationConte
     let mut index = 0;
 
     while index < out.len() {
+        // Special case for sk_live_ and sk_test_ to redact prefix as well
+        if index + 8 <= out.len() {
+            let prefix = &out[index..index + 8];
+            if prefix == b"sk_live_" || prefix == b"sk_test_" {
+                let mut val_index = index + 8;
+                while val_index < out.len() && out[val_index].is_ascii_alphanumeric() {
+                    val_index += 1;
+                }
+                for i in index..val_index {
+                    out[i] = b'x';
+                }
+                index = val_index;
+                report.record("credential");
+                continue;
+            }
+        }
+
         let mut matched = false;
         for rule in &context.rules {
             let pat = rule.pattern;
@@ -414,6 +491,7 @@ pub fn sanitize_payload_with_context(payload: &[u8], context: &SanitizationConte
         }
     }
 
+    redact_inline_credential_tokens(&mut out);
     (out, report)
 }
 
@@ -626,6 +704,16 @@ pub fn export_sanitized_suite_json(
 mod tests {
     use super::*;
     use crate::compute_signature_hash;
+
+    #[test]
+    fn sanitizes_inline_stripe_style_tokens() {
+        let payload = b"sk_live_abc123def456 and api_key_xyz789".to_vec();
+        let sanitized = sanitize_payload_fragments(&payload);
+        let sanitized_str = String::from_utf8_lossy(&sanitized);
+
+        assert!(!sanitized_str.contains("sk_live"));
+        assert!(!sanitized_str.contains("abc123def456"));
+    }
 
     #[test]
     fn sanitizes_query_style_secret_values_in_seed_payloads() {

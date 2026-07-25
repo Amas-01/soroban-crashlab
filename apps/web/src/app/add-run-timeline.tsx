@@ -56,7 +56,7 @@ const SKELETON_ROWS = [
 
 function TimelineSkeleton() {
   return (
-    <section className="w-full rounded-[2.5rem] border border-black/[.08] bg-white/80 p-8 shadow-xl backdrop-blur-md dark:border-white/[.145] dark:bg-zinc-950/80">
+    <section role="status" aria-label="Loading timeline" className="w-full rounded-[2.5rem] border border-black/[.08] bg-white/80 p-8 shadow-xl backdrop-blur-md dark:border-white/[.145] dark:bg-zinc-950/80">
       <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="mb-3 flex items-center gap-2">
@@ -85,7 +85,7 @@ function TimelineSkeleton() {
 
 function TimelineError({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <section className="w-full rounded-[2.5rem] border border-rose-200 dark:border-rose-900/50 bg-rose-50/80 dark:bg-rose-950/30 p-8 shadow-lg">
+    <section role="alert" className="w-full rounded-[2.5rem] border border-rose-200 dark:border-rose-900/50 bg-rose-50/80 dark:bg-rose-950/30 p-8 shadow-lg">
       <div className="flex flex-col items-center justify-center py-8">
         <div className="h-12 w-12 rounded-full bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center mb-4">
           <svg className="h-6 w-6 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,7 +297,7 @@ export default function AddRunTimeline({
       <div className="relative mt-8 md:mt-12 pb-4 md:pb-6 overflow-x-auto" role="application" aria-label="Timeline visualization">
         <div className="absolute inset-0 flex justify-between pointer-events-none border-x border-zinc-100 dark:border-zinc-800 min-w-[600px]" aria-hidden="true">
           {[0, 0.25, 0.5, 0.75, 1].map((p) => (
-            <div key={p} className="relative h-full border-r border-zinc-100 dark:border-zinc-800 last:border-0">
+            <div key={`${p * 100}%`} className="relative h-full border-r border-zinc-100 dark:border-zinc-800 last:border-0">
               <span className="absolute -top-6 md:-top-8 left-1/2 -translate-x-1/2 text-[9px] md:text-[10px] font-mono font-bold text-zinc-400 bg-white px-1.5 md:px-2 py-0.5 rounded-full dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 whitespace-nowrap">
                 {formatTime(minTime + (p * timeRange))}
               </span>
