@@ -190,7 +190,11 @@ export default function EnhancedRunHistoryTable({
               )}
               {visibleColumns.includes("id") && (
                 <th
-                  className="px-6 py-5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                  className={`px-6 py-5 text-[10px] font-bold uppercase tracking-widest cursor-pointer transition-colors ${
+                    sortField === "id"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}
                   onClick={() => toggleSort("id")}
                 >
                   Run Identifier{" "}
@@ -209,7 +213,11 @@ export default function EnhancedRunHistoryTable({
               )}
               {visibleColumns.includes("duration") && (
                 <th
-                  className="px-6 py-5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest text-right cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                  className={`px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-right cursor-pointer transition-colors ${
+                    sortField === "duration"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}
                   onClick={() => toggleSort("duration")}
                 >
                   Timeline{" "}
@@ -219,7 +227,11 @@ export default function EnhancedRunHistoryTable({
               )}
               {visibleColumns.includes("seedCount") && (
                 <th
-                  className="px-6 py-5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest text-right cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                  className={`px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-right cursor-pointer transition-colors ${
+                    sortField === "seedCount"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}
                   onClick={() => toggleSort("seedCount")}
                 >
                   Vectors{" "}
