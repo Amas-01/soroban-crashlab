@@ -4,6 +4,7 @@ pub mod cors;
 pub mod fixture;
 pub mod fixture_classifier;
 pub mod health;
+pub mod lease;
 pub mod prng;
 pub mod regression_group;
 pub mod reproducer;
